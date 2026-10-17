@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packet weight calculator</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="theme-color" content="#1F2A8C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pack Weights">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+:root{
+  --paper:#F3F5F9; --card:#FFFFFF; --ink:#1F2A8C; --text:#1B1E27; --muted:#5E657D;
+  --rule:#CDD3E0; --hl:#ECEFFA; --flag:#B3261E; --flagbg:#FCE8E6; --accent:#1F2A8C; --accent-text:#FFFFFF; --chk:#B26B00; --chkbg:#FFF3DC;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#12141B; --card:#1A1D27; --ink:#AEB9FF; --text:#E8EAF2; --muted:#9AA1BA;
+    --rule:#30364A; --hl:#222744; --flag:#FF8A80; --flagbg:#3B2022; --accent:#AEB9FF; --accent-text:#12141B; --chk:#FFB454; --chkbg:#3A2E14;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px 14px 80px}
+h1{font-size:1.4rem;margin:4px 0 2px}
+h2{font-size:1.05rem;margin:0}
+p.sub{margin:0 0 16px;color:var(--muted);font-size:.92rem}
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px;margin-bottom:16px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+label.f input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--text);min-height:42px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper input{width:72px;text-align:center;font-weight:700}
+button{font:inherit;font-size:.95rem;min-height:42px;padding:0 14px;border-radius:6px;border:1px solid var(--rule);background:var(--card);color:var(--text);cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:600}
+button.danger[data-armed]{background:var(--flagbg);color:var(--flag);border-color:var(--flag)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.note{font-size:.82rem;color:var(--muted);margin:8px 0 0}
+.bhead{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:10px}
+.bhead label.f input{min-width:130px}
+.scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:6px}
+table.sheet{border-collapse:collapse;width:100%;background:var(--card)}
+.sheet th,.sheet td{border:1px solid var(--rule);padding:0}
+.sheet thead th{background:var(--hl);font-size:.82rem;color:var(--muted);font-weight:600;padding:7px 4px;white-space:nowrap}
+.sheet tbody th{font-weight:500;color:var(--muted);font-size:.85rem;padding:0 8px;text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:1}
+.sheet thead th:first-child{position:sticky;left:0;z-index:2}
+.sheet input.cell{width:100%;min-width:72px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;text-align:center;padding:10px 2px;font-variant-numeric:tabular-nums}
+.sheet td.out{background:var(--flagbg)}
+.sheet td.out input{color:var(--flag);font-weight:700}
+.sheet td.chk{background:var(--chkbg);box-shadow:inset 0 0 0 2px var(--chk)}
+#preview{display:block;max-height:180px;max-width:100%;margin-top:10px;border-radius:6px;border:1px solid var(--rule)}
+#preview[hidden]{display:none}
+details.panel summary{cursor:pointer;font-weight:600;min-height:32px}
+#pasted{width:100%;margin-top:8px;font:14px/1.4 ui-monospace,Menlo,Consolas,monospace;padding:10px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--text)}
+.sheet tr.avg td,.sheet tr.avg th{background:var(--hl)}
+.sheet tr.avg td{text-align:center;font-weight:700;padding:9px 2px;font-variant-numeric:tabular-nums}
+.sheet .mism{display:block;text-align:center;font-size:.72rem;color:var(--flag);min-height:0;padding-bottom:2px}
+.sheet select{width:100%;min-width:72px;border:0;background:transparent;color:var(--text);font:inherit;font-size:15px;padding:9px 2px;text-align:center}
+.sheet select.leak{color:var(--flag);font-weight:700}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+table.sum td,table.sum th{padding:10px 8px;text-align:center;font-variant-numeric:tabular-nums}
+table.sum tbody th{text-align:left;color:var(--text);font-weight:600}
+table.sum tbody td{font-size:1.05rem;color:var(--ink);font-weight:600}
+table.sum td.all{background:var(--hl)}
+table.sum td.out{background:var(--flagbg);color:var(--flag)}
+table.sum tr.main td{font-size:1.2rem}
+@media (prefers-reduced-motion:no-preference){button{transition:background .15s}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Packet weight calculator</h1>
+  <p class="sub">Scan a photo of the sheet or type the readings. Averages, max, min and range update as you go.</p>
+
+  <section class="panel" aria-label="Scan a sheet">
+    <div class="bhead"><h2>Scan a sheet</h2></div>
+    <div class="actions" style="margin-top:0">
+      <button type="button" class="primary" id="snap">Take photo</button>
+      <button type="button" id="pick">Choose photo</button>
+    </div>
+    <input type="file" id="fcam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="ffile" accept="image/*" hidden>
+    <p class="note" id="scanmsg" role="status">Lay the sheet flat, keep it straight and well lit, and fit the whole page in the photo. Cells outlined in amber were hard to read, so check them against the sheet.</p>
+    <details id="keybox" style="margin-top:10px">
+      <summary style="cursor:pointer;font-weight:600">Scan settings (API key)</summary>
+      <p class="note">Needed only when you open this app outside Claude, such as from your Home Screen. The key is stored on this phone only and is sent only to Anthropic.</p>
+      <div class="actions" style="margin-top:8px">
+        <input type="password" id="apikey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Anthropic API key" style="flex:1;min-width:180px;font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--text);min-height:42px">
+        <button type="button" class="primary" id="savekey">Save key</button>
+        <button type="button" id="removekey">Remove</button>
+      </div>
+      <p class="note" id="keystatus" role="status"></p>
+    </details>
+    <img id="preview" alt="Photo being scanned" hidden>
+  </section>
+
+  <details class="panel" id="importbox">
+    <summary>Paste readings instead</summary>
+    <p class="note">Paste rows like "5:30 PM, M/C-3, 27.24, 28.74, 28.27, 28.50, 28.24, 28.19" (time, machine, five readings, then the written average if you have it). Data in the app's own format works too.</p>
+    <textarea id="pasted" rows="6" aria-label="Pasted readings" placeholder='{"machines":8,"blocks":[...]}'></textarea>
+    <div class="actions"><button type="button" class="primary" id="doimport">Fill from pasted data</button></div>
+    <p class="note" id="importmsg" role="status"></p>
+  </details>
+
+  <section class="panel" aria-label="Sheet details">
+    <div class="fields">
+      <label class="f">Date<input type="date" id="date"></label>
+      <label class="f">Product<input type="text" id="product" placeholder="e.g. Digestive"></label>
+      <label class="f">Shift<input type="text" id="shift" placeholder="e.g. A"></label>
+      <label class="f">Machines
+        <span class="stepper">
+          <button type="button" id="mless" aria-label="Fewer machines">−</button>
+          <input type="number" id="mcount" min="1" max="40" value="8" inputmode="numeric" aria-label="Number of machines">
+          <button type="button" id="mmore" aria-label="More machines">+</button>
+        </span>
+      </label>
+      <label class="f">Target weight (optional)<input type="text" inputmode="decimal" id="target" placeholder="e.g. 28.5"></label>
+      <label class="f">Tolerance ± (optional)<input type="text" inputmode="decimal" id="tol" placeholder="e.g. 2"></label>
+    </div>
+    <p class="note">With a target and tolerance set, readings outside the limits turn red. If you also type the average written on the sheet, any block where it differs from the calculated one is flagged.</p>
+  </section>
+
+  <div id="blocks"></div>
+
+  <div class="actions" style="margin:-4px 0 18px">
+    <button type="button" class="primary" id="addblock">Add time block</button>
+  </div>
+
+  <section class="panel" aria-label="Results">
+    <div class="bhead"><h2>Results for the whole shift</h2></div>
+    <div class="scroll"><table class="sheet sum" id="sum"></table></div>
+    <div class="actions">
+      <button type="button" class="primary" id="copy">Copy results</button>
+      <button type="button" id="csv">Download CSV</button>
+      <button type="button" class="danger" id="clear">Clear all</button>
+    </div>
+    <p class="note">Total AVG is the mean of every reading entered for that machine. Range is max minus min. "All" pools every reading from every machine. "Avg of machines" is the average of each row across the machines that have readings (for example, the mean of the machines' Total AVG values, and the mean of their MAX WT values).</p>
+  </section>
+</main>
+
+<script>
+const PK = 5;
+const $ = s => document.querySelector(s);
+const el = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const k in props) {
+    if (k === 'class') e.className = props[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), props[k]);
+    else e.setAttribute(k, props[k]);
+  }
+  kids.flat().forEach(c => c != null && e.append(c));
+  return e;
+};
+const num = s => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) ? n : null; };
+const f2 = n => n === null ? '–' : n.toFixed(2);
+
+const d = new Date();
+const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const state = { machines: 8, date: today, product: '', shift: '', target: '', tol: '', blocks: [] };
+let refs;
+
+const newBlock = () => ({
+  time: '',
+  unsure: {},
+  v: Array.from({length: PK}, () => Array(state.machines).fill('')),
+  sheet: Array(state.machines).fill(''),
+  leak: Array(state.machines).fill('')
+});
+
+function resizeBlocks() {
+  state.blocks.forEach(b => {
+    b.v.forEach((row, r) => { while (row.length < state.machines) row.push(''); row.length = state.machines; });
+    while (b.sheet.length < state.machines) b.sheet.push(''); b.sheet.length = state.machines;
+    while (b.leak.length < state.machines) b.leak.push(''); b.leak.length = state.machines;
+  });
+}
+
+function arm(btn, label, armedLabel, fn) {
+  let t; btn.textContent = label;
+  btn.addEventListener('click', () => {
+    if (btn.dataset.armed) { clearTimeout(t); delete btn.dataset.armed; btn.textContent = label; fn(); }
+    else { btn.dataset.armed = 1; btn.textContent = armedLabel; t = setTimeout(() => { delete btn.dataset.armed; btn.textContent = label; }, 3000); }
+  });
+}
+
+function focusCell(bi, r, m) {
+  const c = refs.cells[bi]?.[r]?.[m];
+  if (c) { c.querySelector('input').focus(); c.querySelector('input').select(); return true; }
+  return false;
+}
+
+function build() {
+  refs = { cells: [], avg: [], mism: [], sum: null };
+  const host = $('#blocks'); host.replaceChildren();
+
+  state.blocks.forEach((b, bi) => {
+    refs.cells[bi] = []; refs.avg[bi] = []; refs.mism[bi] = [];
+
+    const removeBtn = el('button', { type: 'button', class: 'danger' });
+    arm(removeBtn, 'Remove block', 'Tap again to remove', () => {
+      state.blocks.splice(bi, 1);
+      if (!state.blocks.length) state.blocks.push(newBlock());
+      build(); update();
+    });
+
+    const head = el('div', { class: 'bhead' },
+      el('label', { class: 'f' }, 'Time',
+        el('input', { type: 'time', value: b.time, oninput: e => { b.time = e.target.value; } })),
+      removeBtn);
+
+    const thead = el('thead', {}, el('tr', {},
+      el('th', {}, 'Packet'),
+      Array.from({length: state.machines}, (_, m) => el('th', {}, `M/C-${m+1}`))));
+
+    const tbody = el('tbody');
+    for (let r = 0; r < PK; r++) {
+      refs.cells[bi][r] = [];
+      const tr = el('tr', {}, el('th', { scope: 'row' }, String(r + 1)));
+      for (let m = 0; m < state.machines; m++) {
+        const input = el('input', {
+          class: 'cell', type: 'text', inputmode: 'decimal', enterkeyhint: 'next', autocomplete: 'off',
+          'aria-label': `Block ${bi+1}, packet ${r+1}, machine ${m+1}`, value: b.v[r][m],
+          oninput: e => { b.v[r][m] = e.target.value; delete b.unsure[r + ',' + m]; update(); },
+          onkeydown: e => {
+            if (e.key === 'Enter' || e.key === 'ArrowDown') {
+              e.preventDefault();
+              if (!focusCell(bi, r + 1, m)) focusCell(bi, 0, m + 1);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault(); focusCell(bi, r - 1, m);
+            }
+          }
+        });
+        const td = el('td', {}, input);
+        refs.cells[bi][r][m] = td; tr.append(td);
+      }
+      tbody.append(tr);
+    }
+
+    const avgRow = el('tr', { class: 'avg' }, el('th', { scope: 'row' }, 'AVG'));
+    const sheetRow = el('tr', {}, el('th', { scope: 'row' }, 'Sheet AVG'));
+    const leakRow = el('tr', {}, el('th', { scope: 'row' }, 'Leak test'));
+    for (let m = 0; m < state.machines; m++) {
+      const a = el('td', {}, '–'); refs.avg[bi][m] = a; avgRow.append(a);
+
+      const mism = el('span', { class: 'mism' });
+      refs.mism[bi][m] = mism;
+      sheetRow.append(el('td', {},
+        el('input', { class: 'cell', type: 'text', inputmode: 'decimal', autocomplete: 'off',
+          'aria-label': `Block ${bi+1}, written average, machine ${m+1}`, value: b.sheet[m],
+          oninput: e => { b.sheet[m] = e.target.value; update(); } }), mism));
+
+      const sel = el('select', { 'aria-label': `Block ${bi+1}, leak test, machine ${m+1}`,
+        onchange: e => { b.leak[m] = e.target.value; e.target.classList.toggle('leak', e.target.value === 'Leak'); } },
+        el('option', { value: '' }, '–'), el('option', { value: 'OK' }, 'OK'), el('option', { value: 'Leak' }, 'Leak'));
+      sel.value = b.leak[m]; sel.classList.toggle('leak', b.leak[m] === 'Leak');
+      leakRow.append(el('td', {}, sel));
+    }
+    tbody.append(avgRow, sheetRow, leakRow);
+
+    host.append(el('section', { class: 'panel', 'aria-label': `Time block ${bi+1}` },
+      head, el('div', { class: 'scroll' }, el('table', { class: 'sheet' }, thead, tbody))));
+  });
+
+  // summary table
+  const sum = $('#sum'); sum.replaceChildren();
+  const heads = ['', ...Array.from({length: state.machines}, (_, m) => `M/C-${m+1}`), 'All', 'Avg of machines'];
+  sum.append(el('thead', {}, el('tr', {}, heads.map(h => el('th', {}, h)))));
+  const rows = [['n', 'Readings'], ['avg', 'Total AVG'], ['max', 'MAX WT'], ['min', 'MIN WT'], ['range', 'RANGE']];
+  refs.sum = {};
+  const sb = el('tbody');
+  rows.forEach(([key, label]) => {
+    refs.sum[key] = [];
+    const tr = el('tr', { class: key === 'n' ? '' : 'main' }, el('th', { scope: 'row' }, label));
+    for (let m = 0; m <= state.machines + 1; m++) {
+      const td = el('td', { class: m >= state.machines ? 'all' : '' }, '–');
+      refs.sum[key][m] = td; tr.append(td);
+    }
+    sb.append(tr);
+  });
+  sum.append(sb);
+}
+
+function stats(a) {
+  if (!a.length) return { n: 0, avg: null, max: null, min: null, range: null };
+  const max = Math.max(...a), min = Math.min(...a);
+  return { n: a.length, avg: a.reduce((s, x) => s + x, 0) / a.length, max, min, range: max - min };
+}
+
+let latest = [];
+function update() {
+  const tgt = num(state.target), tol = num(state.tol), useTol = tgt !== null && tol !== null;
+  const out = x => useTol && x !== null && Math.abs(x - tgt) > tol + 1e-9;
+  const all = Array.from({length: state.machines}, () => []);
+
+  state.blocks.forEach((b, bi) => {
+    for (let m = 0; m < state.machines; m++) {
+      const vals = [];
+      for (let r = 0; r < PK; r++) {
+        const x = num(b.v[r][m]);
+        refs.cells[bi][r][m].classList.toggle('out', out(x));
+        refs.cells[bi][r][m].classList.toggle('chk', !!b.unsure[r + ',' + m]);
+        if (x !== null) { vals.push(x); all[m].push(x); }
+      }
+      const s = stats(vals);
+      refs.avg[bi][m].textContent = f2(s.avg);
+      const sh = num(b.sheet[m]);
+      refs.mism[bi][m].textContent = (s.avg !== null && sh !== null && Math.abs(s.avg - sh) > 0.05) ? `calc ${s.avg.toFixed(2)}` : '';
+    }
+  });
+
+  latest = all.map(stats);
+  latest.push(stats(all.flat()));
+  const perMachine = latest.slice(0, state.machines);
+  const mean = k => {
+    const v = perMachine.map(s => s[k]).filter(x => x !== null);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  latest.push({ n: 0, avg: mean('avg'), max: mean('max'), min: mean('min'), range: mean('range') });
+  latest.forEach((s, m) => {
+    refs.sum.n[m].textContent = s.n || '–';
+    ['avg', 'max', 'min', 'range'].forEach(k => refs.sum[k][m].textContent = f2(s[k]));
+    refs.sum.max[m].classList.toggle('out', out(s.max));
+    refs.sum.min[m].classList.toggle('out', out(s.min));
+  });
+}
+
+function summaryText() {
+  const head = ['', ...Array.from({length: state.machines}, (_, m) => `M/C-${m+1}`), 'All', 'Avg of machines'];
+  const line = (label, k) => [label, ...latest.map(s => k === 'n' ? (s.n || '') : (s[k] === null ? '' : s[k].toFixed(2)))].join('\t');
+  return [
+    `Date\t${state.date}\tProduct\t${state.product}\tShift\t${state.shift}`,
+    head.join('\t'), line('Readings', 'n'), line('Total AVG', 'avg'), line('MAX WT', 'max'), line('MIN WT', 'min'), line('RANGE', 'range')
+  ].join('\n');
+}
+
+function csvText() {
+  const q = v => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [[q('Date'), q(state.date), q('Product'), q(state.product), q('Shift'), q(state.shift)].join(',')];
+  const hdr = ['Time', 'Packet', ...Array.from({length: state.machines}, (_, m) => `M/C-${m+1}`)];
+  lines.push(hdr.map(q).join(','));
+  state.blocks.forEach(b => {
+    b.v.forEach((row, r) => lines.push([q(b.time), q(r + 1), ...row.map(q)].join(',')));
+    lines.push([q(b.time), q('Leak test'), ...b.leak.map(q)].join(','));
+  });
+  lines.push('');
+  summaryText().split('\n').slice(1).forEach(l => lines.push(l.split('\t').map(q).join(',')));
+  return lines.join('\n');
+}
+
+function flash(btn, text) {
+  const old = btn.textContent; btn.textContent = text;
+  setTimeout(() => { btn.textContent = old; }, 1500);
+}
+
+// wiring
+const bind = (id, key) => $(id).addEventListener('input', e => { state[key] = e.target.value; if (key === 'target' || key === 'tol') update(); });
+$('#date').value = state.date;
+bind('#date', 'date'); bind('#product', 'product'); bind('#shift', 'shift'); bind('#target', 'target'); bind('#tol', 'tol');
+
+function setMachines(n) {
+  state.machines = Math.min(40, Math.max(1, n));
+  $('#mcount').value = state.machines;
+  resizeBlocks(); build(); update();
+}
+$('#mless').addEventListener('click', () => setMachines(state.machines - 1));
+$('#mmore').addEventListener('click', () => setMachines(state.machines + 1));
+
+$('#addblock').addEventListener('click', () => {
+  state.blocks.push(newBlock()); build(); update();
+  const last = refs.cells.length - 1; focusCell(last, 0, 0);
+});
+
+$('#copy').addEventListener('click', async e => {
+  const btn = e.currentTarget, t = summaryText();
+  try { await navigator.clipboard.writeText(t); }
+  catch (_) {
+    const ta = el('textarea'); ta.value = t; document.body.append(ta); ta.select();
+    try { document.execCommand('copy'); } catch (__) {}
+    ta.remove();
+  }
+  flash(btn, 'Copied');
+});
+
+$('#csv').addEventListener('click', () => {
+  const blob = new Blob([csvText()], { type: 'text/csv' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `packet-weights-${state.date || 'sheet'}.csv` });
+  document.body.append(a); a.click(); a.remove();
+});
+
+arm($('#clear'), 'Clear all', 'Tap again to clear all', () => {
+  state.blocks = [newBlock()];
+  ['product', 'shift', 'target', 'tol'].forEach(k => { state[k] = ''; $('#' + k).value = ''; });
+  build(); update();
+});
+
+$('#mcount').addEventListener('change', e => setMachines(parseInt(e.target.value, 10) || state.machines));
+
+// ---- photo scanning ----
+async function toJpeg(file, max = 2000) {
+  let img = null;
+  if (window.createImageBitmap) {
+    try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (_) { try { img = await createImageBitmap(file); } catch (__) { img = null; } }
+  }
+  if (!img) {
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(new Error('read'));
+        r.readAsDataURL(file);
+      });
+      img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = () => rej(new Error('decode'));
+        i.src = dataUrl;
+      });
+    } catch (_) {
+      const err = new Error('This phone photo format could not be opened. On iPhone, go to Settings > Camera > Formats and choose Most Compatible, then take the photo again. On Android, try the Take photo button instead of Choose photo.');
+      err.final = true;
+      throw err;
+    }
+  }
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const bad = msg => { const err = new Error(msg); err.final = true; return err; };
+  if (!w || !h) throw bad('The photo has no readable size. Retake it with the Take photo button.');
+  const s = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * s));
+  c.height = Math.max(1, Math.round(h * s));
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  if (img.close) img.close();
+  const out = c.toDataURL('image/jpeg', 0.85);
+  if (!/^data:image\/(jpeg|png);base64,.{1000,}/.test(out)) throw bad('The photo came out empty after resizing. Retake it with the Take photo button.');
+  return out;
+}
+
+function scanPrompt(k) {
+  return `This is a photo of a handwritten "Packet Weight Record" sheet. Machines M/C-1, M/C-2, ... are columns. Readings are grouped into time blocks from top to bottom; each block has 5 packet rows (numbered 1 to 5), then an AVG row and a Leak Test row.
+
+Transcribe time block number ${k}, counting from the top (1 = first block). Copy exactly what is written. Do not calculate, correct or guess. Weights look like 28.62 (the decimal point may be written as a dot or a raised dot). Convert times to 24-hour HH:MM (3:55 pm becomes 15:55).
+
+Reply with ONLY compact JSON and no other text:
+{"total_blocks":<number of time blocks on the sheet that have handwriting>,"machines":<highest machine number that has a column on the sheet>,"date":"YYYY-MM-DD or empty","product":"","shift":"","time":"HH:MM or empty","readings":[[5 numbers for M/C-1],[5 numbers for M/C-2],...],"sheet_avg":[one number per machine],"leak":["OK" or "Leak" or "" per machine],"unsure":[[machine,packet],...]}
+
+Use null for any blank cell. "readings" has one list per machine, each with exactly 5 entries (packets 1 to 5, top to bottom). In "unsure" list every reading, as [machine number, packet number], whose digits you could not read with confidence.`;
+}
+
+let scanMT = 'image/jpeg';
+async function readBlock(b64, k) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({
+      model: apiModel(),
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: scanMT, data: b64 } },
+        { type: 'text', text: scanPrompt(k) }
+      ] }]
+    })
+  });
+  let data;
+  try { data = await r.json(); }
+  catch (_) { throw new Error(`The scan service sent back something unreadable (status ${r.status}).`); }
+  if (r.status === 401) throw new Error(getKey() ? 'Your API key was rejected. Check it under Scan settings.' : 'NOKEY');
+  if (!r.ok) throw new Error((data && data.error && data.error.message) || `The scan failed (status ${r.status}).`);
+  if (!data || !Array.isArray(data.content)) throw new Error('The scan service sent back an unexpected reply.');
+  const text = data.content.map(i => i.type === 'text' ? i.text : '').join('');
+  const s = text.indexOf('{'), e = text.lastIndexOf('}');
+  if (s < 0 || e < s) throw new Error('The scan did not return any readings.');
+  try { return JSON.parse(text.slice(s, e + 1)); }
+  catch (_) { throw new Error('The scan result was cut off or garbled.'); }
+}
+
+const blockEmpty = b => b.v.every(row => row.every(x => x === '')) && b.sheet.every(x => x === '');
+
+function applyScan(results) {
+  const first = results.find(Boolean) || {};
+  const detected = Math.min(40, Math.max(0, ...results.filter(Boolean).map(r => parseInt(r.machines, 10) || 0)));
+  const wasEmpty = state.blocks.every(blockEmpty);
+
+  if (wasEmpty) {
+    state.blocks = [];
+    if (detected) state.machines = detected;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(first.date || '')) { state.date = first.date; $('#date').value = first.date; }
+  } else if (detected > state.machines) {
+    state.machines = detected;
+  }
+  if (!state.product && first.product) { state.product = first.product; $('#product').value = first.product; }
+  if (!state.shift && first.shift) { state.shift = first.shift; $('#shift').value = first.shift; }
+  $('#mcount').value = state.machines;
+  resizeBlocks();
+
+  results.forEach(r => {
+    const b = newBlock();
+    if (r) {
+      if (/^\d{1,2}:\d{2}$/.test(r.time || '')) b.time = r.time.padStart(5, '0');
+      (r.readings || []).forEach((col, m) => {
+        if (m >= state.machines || !Array.isArray(col)) return;
+        col.forEach((v, p) => { if (p < PK && v !== null && v !== undefined && v !== '') b.v[p][m] = String(v); });
+      });
+      (r.sheet_avg || []).forEach((v, m) => { if (m < state.machines && v !== null && v !== undefined && v !== '') b.sheet[m] = String(v); });
+      (r.leak || []).forEach((v, m) => { if (m < state.machines && (v === 'OK' || v === 'Leak')) b.leak[m] = v; });
+      (r.unsure || []).forEach(u => {
+        if (!Array.isArray(u)) return;
+        const m = u[0] - 1, p = u[1] - 1;
+        if (m >= 0 && m < state.machines && p >= 0 && p < PK) b.unsure[p + ',' + m] = 1;
+      });
+    }
+    state.blocks.push(b);
+  });
+  if (!state.blocks.length) state.blocks.push(newBlock());
+  build(); update();
+}
+
+async function scan(file) {
+  const msg = $('#scanmsg'), btns = [$('#snap'), $('#pick')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    msg.textContent = 'Preparing photo…';
+    let url = await toJpeg(file, 1600);
+    const prev = $('#preview'); prev.src = url; prev.hidden = false;
+    let b64 = url.split(',')[1];
+    scanMT = url.slice(5, url.indexOf(';')) || 'image/jpeg';
+
+    msg.textContent = 'Reading block 1…';
+    let first;
+    try { first = await readBlock(b64, 1); }
+    catch (err) {
+      if (err instanceof TypeError || err.message === 'NOKEY' || err.message.startsWith('Your API key')) throw err;
+      msg.textContent = 'Retrying with a smaller copy of the photo…';
+      url = await toJpeg(file, 1100);
+      b64 = url.split(',')[1];
+      scanMT = url.slice(5, url.indexOf(';')) || 'image/jpeg';
+      first = await readBlock(b64, 1);
+    }
+    const total = Math.min(10, Math.max(1, parseInt(first.total_blocks, 10) || 1));
+    const results = [first];
+    let failed = [];
+    for (let k = 2; k <= total; k++) {
+      msg.textContent = `Reading block ${k} of ${total}…`;
+      try { results.push(await readBlock(b64, k)); }
+      catch (_) { results.push(null); failed.push(k); }
+    }
+    applyScan(results);
+    msg.textContent = `Filled ${results.length - failed.length} of ${total} time block${total > 1 ? 's' : ''}. Check the amber cells and the Sheet AVG flags against the paper.` +
+      (failed.length ? ` Block ${failed.join(', ')} could not be read, so type it in by hand.` : '');
+  } catch (e) {
+    const pasteHint = ' You can use "Paste readings instead" below.';
+    if (e.message === 'NOKEY' || (e instanceof TypeError && !getKey())) {
+      msg.textContent = 'To scan from this app, add your API key under Scan settings.' + pasteHint;
+      $('#keybox').open = true;
+    } else if (e.message.startsWith('Your API key')) {
+      msg.textContent = e.message;
+      $('#keybox').open = true;
+    } else if (e instanceof TypeError) {
+      msg.textContent = 'Could not reach Anthropic. Check your internet connection and try again.';
+    } else if (e.final) {
+      msg.textContent = e.message;
+    } else {
+      msg.textContent = 'Checking the scan service…';
+      const ok = await apiPing();
+      msg.textContent = ok
+        ? `${e.message} The scan service is working, so the problem is with this photo. Try a brighter, straighter photo.`
+        : `${e.message} The scan service is not responding properly in this view.` + pasteHint;
+    }
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+async function apiPing() {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ model: apiModel(), max_tokens: 1000,
+        messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
+    });
+    const d = await r.json();
+    return r.ok && Array.isArray(d.content);
+  } catch (_) { return false; }
+}
+
+function parseTable(text) {
+  const t = text.replace(/·/g, '.').replace(/M\s*\/\s*C\s*[-–—]?\s*(\d+)/gi, 'MC$1');
+  const toks = t.split(/[,;\t\n\r]+/).map(x => x.trim()).filter(Boolean);
+  const timeRe = /^(\d{1,2}):(\d{2})\s*([ap])?\.?m?\.?$/i;
+  const blocks = [], byKey = {};
+  let cur = null, maxM = 0, i = 0;
+  while (i < toks.length) {
+    const tk = toks[i];
+    let m = tk.match(timeRe);
+    if (m) {
+      let h = parseInt(m[1], 10); const ap = (m[3] || '').toLowerCase();
+      if (ap === 'p' && h < 12) h += 12;
+      if (ap === 'a' && h === 12) h = 0;
+      const key = String(h).padStart(2, '0') + ':' + m[2];
+      cur = byKey[key];
+      if (!cur) { cur = byKey[key] = { time: key, readings: [], sheet_avg: [], leak: [] }; blocks.push(cur); }
+      i++; continue;
+    }
+    m = tk.match(/^MC(\d+)$/i);
+    if (m && cur) {
+      const n = parseInt(m[1], 10) - 1; i++;
+      const nums = [];
+      while (i < toks.length && /^-?\d+(\.\d+)?$/.test(toks[i])) { nums.push(parseFloat(toks[i])); i++; }
+      if (i < toks.length && /^(ok|leak)$/i.test(toks[i])) { cur.leak[n] = /^ok$/i.test(toks[i]) ? 'OK' : 'Leak'; i++; }
+      cur.readings[n] = nums.slice(0, PK);
+      if (nums.length > PK) cur.sheet_avg[n] = nums[PK];
+      maxM = Math.max(maxM, n + 1);
+      continue;
+    }
+    i++;
+  }
+  return { machines: maxM, blocks };
+}
+
+function parsePasted(t) {
+  const cands = [t.indexOf('{'), t.indexOf('[')].filter(i => i >= 0).sort((x, y) => x - y);
+  if (cands.length) {
+    try {
+      const start = cands[0];
+      const end = t[start] === '{' ? t.lastIndexOf('}') : t.lastIndexOf(']');
+      const data = JSON.parse(t.slice(start, end + 1));
+      const blocks = Array.isArray(data) ? data : data.blocks;
+      if (Array.isArray(blocks) && blocks.length) return { top: Array.isArray(data) ? {} : data, blocks };
+    } catch (_) { /* fall through to table format */ }
+  }
+  const tab = parseTable(t);
+  if (tab.blocks.length) return { top: { machines: tab.machines }, blocks: tab.blocks };
+  throw new Error('unreadable');
+}
+
+$('#doimport').addEventListener('click', () => {
+  const m = $('#importmsg');
+  try {
+    const { top, blocks } = parsePasted($('#pasted').value);
+    applyScan(blocks.map(b => ({ machines: top.machines, date: top.date, product: top.product, shift: top.shift, ...b })));
+    m.textContent = `Filled ${blocks.length} time block${blocks.length > 1 ? 's' : ''}. Check the amber cells and Sheet AVG flags against the paper.`;
+  } catch (_) {
+    m.textContent = 'That text could not be read. Each row should have a time, a machine like M/C-3, then the five readings.';
+  }
+});
+
+function getKey() { try { return localStorage.getItem('pw_key') || ''; } catch (_) { return ''; } }
+function setKey(v) {
+  try { if (v) localStorage.setItem('pw_key', v); else localStorage.removeItem('pw_key'); return true; }
+  catch (_) { return false; }
+}
+function apiHeaders() {
+  const h = { 'Content-Type': 'application/json' }, k = getKey();
+  if (k) {
+    h['x-api-key'] = k;
+    h['anthropic-version'] = '2023-06-01';
+    h['anthropic-dangerous-direct-browser-access'] = 'true';
+  }
+  return h;
+}
+const apiModel = () => getKey() ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6';
+function showKeyStatus(extra) { $('#keystatus').textContent = extra || (getKey() ? 'A key is saved on this phone.' : 'No key saved.'); }
+$('#savekey').addEventListener('click', () => {
+  const v = $('#apikey').value.trim();
+  if (!v) { showKeyStatus('Paste your key first.'); return; }
+  if (!v.startsWith('sk-ant-')) { showKeyStatus('That does not look like an Anthropic key. It should start with sk-ant-.'); return; }
+  if (!setKey(v)) { showKeyStatus('This browser would not let the app save the key.'); return; }
+  $('#apikey').value = ''; showKeyStatus();
+});
+$('#removekey').addEventListener('click', () => { setKey(''); $('#apikey').value = ''; showKeyStatus(); });
+showKeyStatus();
+
+$('#snap').addEventListener('click', () => $('#fcam').click());
+$('#pick').addEventListener('click', () => $('#ffile').click());
+['#fcam', '#ffile'].forEach(id => $(id).addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) scan(f);
+}));
+
+state.blocks.push(newBlock());
+build(); update();
+</script>
+<script>
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+</script>
+</body>
+</html>
