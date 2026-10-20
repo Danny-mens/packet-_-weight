@@ -32,8 +32,8 @@ h2{font-size:1.05rem;margin:0}
 p.sub{margin:0 0 16px;color:var(--muted);font-size:.92rem}
 .panel{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px;margin-bottom:16px}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-label.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
-label.f input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--text);min-height:42px}
+.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+.f input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--text);min-height:42px}
 .stepper{display:flex;align-items:center;gap:8px}
 .stepper input{width:72px;text-align:center;font-weight:700}
 button{font:inherit;font-size:.95rem;min-height:42px;padding:0 14px;border-radius:6px;border:1px solid var(--rule);background:var(--card);color:var(--text);cursor:pointer}
@@ -112,13 +112,13 @@ table.sum tr.main td{font-size:1.2rem}
       <label class="f">Date<input type="date" id="date"></label>
       <label class="f">Product<input type="text" id="product" placeholder="e.g. Digestive"></label>
       <label class="f">Shift<input type="text" id="shift" placeholder="e.g. A"></label>
-      <label class="f">Machines
+      <div class="f" role="group" aria-labelledby="mlabel"><span id="mlabel">Machines</span>
         <span class="stepper">
           <button type="button" id="mless" aria-label="Fewer machines">−</button>
           <input type="number" id="mcount" min="1" max="40" value="8" inputmode="numeric" aria-label="Number of machines">
           <button type="button" id="mmore" aria-label="More machines">+</button>
         </span>
-      </label>
+      </div>
       <label class="f">Target weight (optional)<input type="text" inputmode="decimal" id="target" placeholder="e.g. 28.5"></label>
       <label class="f">Tolerance ± (optional)<input type="text" inputmode="decimal" id="tol" placeholder="e.g. 2"></label>
     </div>
@@ -156,7 +156,7 @@ const el = (tag, props = {}, ...kids) => {
   kids.flat().forEach(c => c != null && e.append(c));
   return e;
 };
-const num = s => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) ? n : null; };
+const num = s => { const n = parseFloat(String(s).replace(/·/g, '.').replace(',', '.')); return isFinite(n) ? n : null; };
 const f2 = n => n === null ? '–' : n.toFixed(2);
 
 const d = new Date();
@@ -177,7 +177,28 @@ function resizeBlocks() {
     b.v.forEach((row, r) => { while (row.length < state.machines) row.push(''); row.length = state.machines; });
     while (b.sheet.length < state.machines) b.sheet.push(''); b.sheet.length = state.machines;
     while (b.leak.length < state.machines) b.leak.push(''); b.leak.length = state.machines;
+    for (const k in b.unsure) if (+k.split(',')[1] >= state.machines) delete b.unsure[k];
   });
+}
+
+const SAVE_KEY = 'pw_state';
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (_) {} }
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (!s || !Array.isArray(s.blocks)) return;
+    const str = x => x == null ? '' : String(x);
+    state.machines = Math.min(40, Math.max(1, parseInt(s.machines, 10) || 8));
+    ['date', 'product', 'shift', 'target', 'tol'].forEach(k => { if (typeof s[k] === 'string') state[k] = s[k]; });
+    state.blocks = s.blocks.filter(b => b && Array.isArray(b.v)).map(b => ({
+      time: str(b.time),
+      unsure: b.unsure && typeof b.unsure === 'object' ? b.unsure : {},
+      v: Array.from({length: PK}, (_, r) => (Array.isArray(b.v[r]) ? b.v[r] : []).map(str)),
+      sheet: (Array.isArray(b.sheet) ? b.sheet : []).map(str),
+      leak: (Array.isArray(b.leak) ? b.leak : []).map(str)
+    }));
+    resizeBlocks();
+  } catch (_) {}
 }
 
 function arm(btn, label, armedLabel, fn) {
@@ -210,7 +231,7 @@ function build() {
 
     const head = el('div', { class: 'bhead' },
       el('label', { class: 'f' }, 'Time',
-        el('input', { type: 'time', value: b.time, oninput: e => { b.time = e.target.value; } })),
+        el('input', { type: 'time', value: b.time, oninput: e => { b.time = e.target.value; save(); } })),
       removeBtn);
 
     const thead = el('thead', {}, el('tr', {},
@@ -255,7 +276,7 @@ function build() {
           oninput: e => { b.sheet[m] = e.target.value; update(); } }), mism));
 
       const sel = el('select', { 'aria-label': `Block ${bi+1}, leak test, machine ${m+1}`,
-        onchange: e => { b.leak[m] = e.target.value; e.target.classList.toggle('leak', e.target.value === 'Leak'); } },
+        onchange: e => { b.leak[m] = e.target.value; e.target.classList.toggle('leak', e.target.value === 'Leak'); save(); } },
         el('option', { value: '' }, '–'), el('option', { value: 'OK' }, 'OK'), el('option', { value: 'Leak' }, 'Leak'));
       sel.value = b.leak[m]; sel.classList.toggle('leak', b.leak[m] === 'Leak');
       leakRow.append(el('td', {}, sel));
@@ -327,6 +348,7 @@ function update() {
     refs.sum.max[m].classList.toggle('out', out(s.max));
     refs.sum.min[m].classList.toggle('out', out(s.min));
   });
+  save();
 }
 
 function summaryText() {
@@ -345,6 +367,7 @@ function csvText() {
   lines.push(hdr.map(q).join(','));
   state.blocks.forEach(b => {
     b.v.forEach((row, r) => lines.push([q(b.time), q(r + 1), ...row.map(q)].join(',')));
+    lines.push([q(b.time), q('Sheet AVG'), ...b.sheet.map(q)].join(','));
     lines.push([q(b.time), q('Leak test'), ...b.leak.map(q)].join(','));
   });
   lines.push('');
@@ -358,8 +381,10 @@ function flash(btn, text) {
 }
 
 // wiring
-const bind = (id, key) => $(id).addEventListener('input', e => { state[key] = e.target.value; if (key === 'target' || key === 'tol') update(); });
-$('#date').value = state.date;
+const bind = (id, key) => $(id).addEventListener('input', e => { state[key] = e.target.value; if (key === 'target' || key === 'tol') update(); else save(); });
+load();
+['date', 'product', 'shift', 'target', 'tol'].forEach(k => { $('#' + k).value = state[k]; });
+$('#mcount').value = state.machines;
 bind('#date', 'date'); bind('#product', 'product'); bind('#shift', 'shift'); bind('#target', 'target'); bind('#tol', 'tol');
 
 function setMachines(n) {
@@ -388,13 +413,16 @@ $('#copy').addEventListener('click', async e => {
 
 $('#csv').addEventListener('click', () => {
   const blob = new Blob([csvText()], { type: 'text/csv' });
-  const a = el('a', { href: URL.createObjectURL(blob), download: `packet-weights-${state.date || 'sheet'}.csv` });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: `packet-weights-${state.date || 'sheet'}.csv` });
   document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
 arm($('#clear'), 'Clear all', 'Tap again to clear all', () => {
   state.blocks = [newBlock()];
   ['product', 'shift', 'target', 'tol'].forEach(k => { state[k] = ''; $('#' + k).value = ''; });
+  $('#preview').hidden = true; $('#preview').removeAttribute('src');
   build(); update();
 });
 
@@ -461,7 +489,7 @@ async function readBlock(b64, k) {
     headers: apiHeaders(),
     body: JSON.stringify({
       model: apiModel(),
-      max_tokens: 1000,
+      max_tokens: 16000,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: scanMT, data: b64 } },
         { type: 'text', text: scanPrompt(k) }
@@ -474,6 +502,8 @@ async function readBlock(b64, k) {
   if (r.status === 401) throw new Error(getKey() ? 'Your API key was rejected. Check it under Scan settings.' : 'NOKEY');
   if (!r.ok) throw new Error((data && data.error && data.error.message) || `The scan failed (status ${r.status}).`);
   if (!data || !Array.isArray(data.content)) throw new Error('The scan service sent back an unexpected reply.');
+  if (data.stop_reason === 'refusal') throw new Error('The scan service declined to read this photo.');
+  if (data.stop_reason === 'max_tokens') throw new Error('The scan result was cut off.');
   const text = data.content.map(i => i.type === 'text' ? i.text : '').join('');
   const s = text.indexOf('{'), e = text.lastIndexOf('}');
   if (s < 0 || e < s) throw new Error('The scan did not return any readings.');
@@ -481,11 +511,11 @@ async function readBlock(b64, k) {
   catch (_) { throw new Error('The scan result was cut off or garbled.'); }
 }
 
-const blockEmpty = b => b.v.every(row => row.every(x => x === '')) && b.sheet.every(x => x === '');
+const blockEmpty = b => !b.time && b.v.every(row => row.every(x => x === '')) && b.sheet.every(x => x === '') && b.leak.every(x => x === '');
 
 function applyScan(results) {
   const first = results.find(Boolean) || {};
-  const detected = Math.min(40, Math.max(0, ...results.filter(Boolean).map(r => parseInt(r.machines, 10) || 0)));
+  const detected = Math.min(40, Math.max(0, ...results.filter(Boolean).map(r => Math.max(parseInt(r.machines, 10) || 0, Array.isArray(r.readings) ? r.readings.length : 0))));
   const wasEmpty = state.blocks.every(blockEmpty);
 
   if (wasEmpty) {
@@ -506,10 +536,13 @@ function applyScan(results) {
       if (/^\d{1,2}:\d{2}$/.test(r.time || '')) b.time = r.time.padStart(5, '0');
       (r.readings || []).forEach((col, m) => {
         if (m >= state.machines || !Array.isArray(col)) return;
-        col.forEach((v, p) => { if (p < PK && v !== null && v !== undefined && v !== '') b.v[p][m] = String(v); });
+        col.forEach((v, p) => { if (p < PK && v !== null && v !== undefined && v !== '') b.v[p][m] = String(v).replace(/·/g, '.'); });
       });
-      (r.sheet_avg || []).forEach((v, m) => { if (m < state.machines && v !== null && v !== undefined && v !== '') b.sheet[m] = String(v); });
-      (r.leak || []).forEach((v, m) => { if (m < state.machines && (v === 'OK' || v === 'Leak')) b.leak[m] = v; });
+      (r.sheet_avg || []).forEach((v, m) => { if (m < state.machines && v !== null && v !== undefined && v !== '') b.sheet[m] = String(v).replace(/·/g, '.'); });
+      (r.leak || []).forEach((v, m) => {
+        const lv = String(v || '').trim().toLowerCase();
+        if (m < state.machines && (lv === 'ok' || lv === 'leak')) b.leak[m] = lv === 'ok' ? 'OK' : 'Leak';
+      });
       (r.unsure || []).forEach(u => {
         if (!Array.isArray(u)) return;
         const m = u[0] - 1, p = u[1] - 1;
@@ -610,7 +643,8 @@ function parseTable(text) {
       i++; continue;
     }
     m = tk.match(/^MC(\d+)$/i);
-    if (m && cur) {
+    if (m) {
+      if (!cur) { cur = byKey[''] = { time: '', readings: [], sheet_avg: [], leak: [] }; blocks.push(cur); }
       const n = parseInt(m[1], 10) - 1; i++;
       const nums = [];
       while (i < toks.length && /^-?\d+(\.\d+)?$/.test(toks[i])) { nums.push(parseFloat(toks[i])); i++; }
@@ -686,7 +720,7 @@ $('#pick').addEventListener('click', () => $('#ffile').click());
   if (f) scan(f);
 }));
 
-state.blocks.push(newBlock());
+if (!state.blocks.length) state.blocks.push(newBlock());
 build(); update();
 </script>
 <script>
